@@ -1,3 +1,9 @@
-venv/
+# Dati grandi
+data/raw/
+data/processed/
+data/gt/
+
+# Cache
 __pycache__/
 .ipynb_checkpoints/
+venv/
