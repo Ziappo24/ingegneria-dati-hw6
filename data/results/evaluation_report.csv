@@ -1,0 +1,4 @@
+Modello,TP,FP,Found,Precision,Recall,F1-Score
+matches_dedupe_B1.csv,0,0,545,0.0,0.0,0.0
+matches_rl_B1.csv,4,0,1126263,0.0,0.009,0.0
+matches_rl_B2.csv,1,0,426807,0.0,0.0023,0.0
