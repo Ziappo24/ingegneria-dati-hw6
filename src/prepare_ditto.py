@@ -1,63 +1,36 @@
 import os
 import pandas as pd
 
-def row_to_ditto(row, columns):
-    """Converte una riga di pandas nel formato [COL] col [VAL] val per DITTO."""
-    parts = []
-    for col in columns:
-        val = str(row[col]).strip() if pd.notna(row[col]) else "NaN"
-        parts.append(f"[COL] {col} [VAL] {val}")
-    return " ".join(parts)
+def serialize(row, cols):
+    """Formatta la riga: COL [nome] VAL [valore] ..."""
+    return " ".join([f"COL {c} VAL {str(row[c]).strip() if pd.notna(row[c]) else 'NaN'}" for c in cols])
 
-def prepare_ditto():
-    print("🚀 Inizio preparazione dataset per DITTO...")
-    
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    gt_dir = os.path.join(base_dir, 'data', 'gt')
-    processed_dir = os.path.join(base_dir, 'data', 'processed')
-    output_dir = os.path.join(base_dir, 'data', 'ditto')
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Caricamento dataset originali
-    print("Caricamento dataset car...")
-    df_cl = pd.read_csv(os.path.join(processed_dir, 'craigslist_final.csv'), index_col='id_cl')
-    df_us = pd.read_csv(os.path.join(processed_dir, 'us_cars_final.csv'), index_col='id_us')
-    
-    # Colonne da includere (escludendo gli ID)
-    columns = ['make', 'model', 'year', 'mileage', 'price', 'transmission', 'body_type', 'fuel_type']
-    
-    splits = {
-        'train.txt': 'gt_train.csv',
-        'valid.txt': 'gt_val.csv',
-        'test.txt': 'gt_test.csv'
-    }
-    
-    for out_file, gt_file in splits.items():
-        print(f"Elaborazione {gt_file} -> {out_file}...")
-        gt_path = os.path.join(gt_dir, gt_file)
-        if not os.path.exists(gt_path):
-            print(f"⚠️ Avviso: {gt_file} non trovato, salto.")
-            continue
-            
-        gt = pd.read_csv(gt_path)
+def run_preparation():
+    # Definiamo la cartella di destinazione dentro il repo FAIR-DA4ER
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    repo_path = os.path.join(base_path, 'ditto_repository', 'FAIR-DA4ER-main')
+    output_path = os.path.join(repo_path, 'data', 'auto_task') #
+    os.makedirs(output_path, exist_ok=True)
+
+    # Caricamento dati
+    df_cl = pd.read_csv('data/processed/craigslist_final.csv', index_col='id_cl')
+    df_us = pd.read_csv('data/processed/us_cars_final.csv', index_col='id_us')
+    cols = ['make', 'model', 'year', 'transmission', 'fuel_type']
+
+    splits = {'train.txt': 'gt_train.csv', 'valid.txt': 'gt_val.csv', 'test.txt': 'gt_test.csv'}
+
+    for out_name, gt_name in splits.items():
+        gt = pd.read_csv(f'data/gt/{gt_name}')
         lines = []
-        
         for _, row in gt.iterrows():
-            id_cl = row['id_cl']
-            id_us = row['id_us']
-            label = int(row['label'])
-            
-            if id_cl in df_cl.index and id_us in df_us.index:
-                rec1 = row_to_ditto(df_cl.loc[id_cl], columns)
-                rec2 = row_to_ditto(df_us.loc[id_us], columns)
-                # Formato: record1 \t record2 \t label
-                lines.append(f"{rec1}\t{rec2}\t{label}")
+            if row['id_cl'] in df_cl.index and row['id_us'] in df_us.index:
+                s1 = serialize(df_cl.loc[row['id_cl']], cols)
+                s2 = serialize(df_us.loc[row['id_us']], cols)
+                lines.append(f"{s1}\t{s2}\t{int(row['label'])}")
         
-        with open(os.path.join(output_dir, out_file), 'w', encoding='utf-8') as f:
+        with open(os.path.join(output_path, out_name), 'w', encoding='utf-8') as f:
             f.write("\n".join(lines) + "\n")
-            
-    print(f"✅ Preparazione DITTO completata! File salvati in: {output_dir}")
+    print(f"✅ File salvati in: {output_path}")
 
 if __name__ == "__main__":
-    prepare_ditto()
+    run_preparation()

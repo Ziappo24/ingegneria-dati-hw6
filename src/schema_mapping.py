@@ -1,23 +1,22 @@
 import pandas as pd
-import os
 import re
+import os
+import numpy as np
+from tqdm import tqdm
+
+# Inizializziamo tqdm per Pandas
+tqdm.pandas()
 
 def standardize_data(df):
-    """
-    Standardizzazione generale di tutte le colonne testuali.
-    """
+    """ Standardizzazione generale delle colonne testuali. """
     for col in df.select_dtypes(include=['object']).columns:
-        # 1. Minuscolo e rimozione spazi ai bordi
         df[col] = df[col].astype(str).str.lower().str.strip()
-        # 2. Sostituzione di stringhe vuote o segnaposti con null reale
-        df[col] = df[col].replace(['nan', 'none', '', 'null', 'nan'], pd.NA)
+        # Sostituzione diretta con pd.NA senza passare per stringhe segnaposto
+        df[col] = df[col].replace(['nan', 'none', '', 'null', '<na>'], pd.NA)
     return df
 
 def deep_clean(df):
-    """
-    Pulizia profonda specifica per migliorare il record linkage.
-    """
-    # Normalizzazione Brand (usiamo 'make' come nome colonna nello schema mediato)
+    """ Pulizia specifica per brand e modelli. """
     brand_map = {
         'vw': 'volkswagen', 
         'chevy': 'chevrolet', 
@@ -27,117 +26,87 @@ def deep_clean(df):
     if 'make' in df.columns:
         df['make'] = df['make'].replace(brand_map)
 
-    # Pulizia Modello: rimuove punteggiatura e spazi extra
+    # Pulizia Modello: rimuove punteggiatura e spazi per un matching più forte
     if 'model' in df.columns:
-        df['model'] = df['model'].apply(lambda x: re.sub(r'[^a-z0-9]', '', str(x)) if pd.notna(x) else x)
-
-    # Gestione Body Type: standardizziamo i nulli per stabilità
-    if 'body_type' in df.columns:
-        df['body_type'] = df['body_type'].fillna('unknown')
-        # Semplificazione nomi carrozzeria se necessario (es. suv / crossover -> suv)
-        df['body_type'] = df['body_type'].str.split('/').str[0].str.strip()
-    
+        print("Pulizia stringhe modelli...")
+        df['model'] = df['model'].progress_apply(
+            lambda x: re.sub(r'[^a-z0-9]', '', str(x)) if pd.notna(x) else x
+        )
     return df
 
 def final_polish(df):
-    """
-    Lucidatura finale: carburante, trasmissione, prezzi, km e anni.
-    """
-    import numpy as np
+    """ Lucidatura finale: numerici, carburante e trasmissione. """
     
-    # 1. Pulizia FUEL_TYPE
+    # 1. Pulizia FUEL_TYPE (Mappatura diretta a null)
     if 'fuel_type' in df.columns:
-        df['fuel_type'] = df['fuel_type'].astype(str).str.lower().str.strip()
         fuel_map = {'gasoline': 'gas', 'diesel': 'diesel', 'electric': 'electric', 'hybrid': 'hybrid'}
         df['fuel_type'] = df['fuel_type'].replace(fuel_map)
-        df['fuel_type'] = df['fuel_type'].replace(['nan', 'none', 'other', '', '<na>'], 'unknown')
+        # Riduciamo il rumore: se non è tra i principali, lo consideriamo nullo per il Record Linkage
+        valid_fuels = ['gas', 'diesel', 'electric', 'hybrid']
+        df.loc[~df['fuel_type'].isin(valid_fuels), 'fuel_type'] = pd.NA
 
     # 2. Pulizia TRANSMISSION
     if 'transmission' in df.columns:
-        df['transmission'] = df['transmission'].astype(str).str.lower().str.strip()
         trans_map = {'auto': 'automatic', 'man': 'manual', 'mnd': 'manual'}
         df['transmission'] = df['transmission'].replace(trans_map)
-        df['transmission'] = df['transmission'].replace(['nan', 'none', 'other', '', '<na>'], 'unknown')
+        valid_trans = ['automatic', 'manual']
+        df.loc[~df['transmission'].isin(valid_trans), 'transmission'] = pd.NA
 
-    # 3. Pulizia PRICE e MILEAGE (Numerici)
+    # 3. Pulizia PRICE e MILEAGE
     for col in ['price', 'mileage']:
         if col in df.columns:
-            # Rimuove tutto ciò che non è un numero o punto decimale
             df[col] = df[col].astype(str).str.replace(r'[^\d.]', '', regex=True)
             df[col] = pd.to_numeric(df[col], errors='coerce')
-            # Outliers: < 0 o 0 trattati come nulli
             df.loc[df[col] <= 0, col] = np.nan
 
-    # 4. Pulizia YEAR
+    # 4. Pulizia YEAR (Limite 2026)
     if 'year' in df.columns:
         df['year'] = pd.to_numeric(df['year'], errors='coerce')
-        # Filtro realistico per le auto
+        # Filtro realistico aggiornato al 2026
         df.loc[(df['year'] < 1900) | (df['year'] > 2026), 'year'] = np.nan
         df['year'] = df['year'].astype('Int64')
 
     return df
 
 def clean_vin_for_gt(vin):
-    """
-    Pulizia del VIN per la creazione della Ground Truth.
-    """
-    if pd.isna(vin) or str(vin).lower() in ['nan', 'none', '']: 
+    """ Pulizia VIN con filtro entropia (rimuove 000000...). """
+    if pd.isna(vin) or str(vin).lower() in ['nan', 'none', '', 'null']: 
         return pd.NA
-    # Rimuove caratteri non alfanumerici e rende maiuscolo
+    # Regex standard VIN (rimuove I, O, Q non ammessi)
     clean = re.sub(r'[^A-HJ-NPR-Z0-9]', '', str(vin).upper())
-    # Un VIN valido deve avere 17 caratteri
-    return clean if len(clean) == 17 else pd.NA
-
-def handle_placeholders(df):
-    """
-    Sostituzione segnaposto con nulli reali.
-    """
-    import numpy as np
-    # 1. Torna ai nulli reali per le stringhe
-    df = df.replace(['unknown', 'nan', 'none', '', '<na>'], np.nan)
     
-    # 2. Gestione zeri nei campi numerici
-    cols_no_zero = ['price', 'mileage']
-    for col in cols_no_zero:
-        if col in df.columns:
-            df[col] = df[col].replace(0, np.nan)
-    return df
+    # MODIFICA SOTTOLINEATA: Un VIN valido ha 17 caratteri e non è tutto uguale
+    if len(clean) == 17 and len(set(clean)) > 1:
+        return clean
+    return pd.NA
 
 def load_and_map(file_path, mapping, source_name, **kwargs):
-    """
-    Carica, mappa, standardizza e pulisce un dataset con pipeline avanzata.
-    """
-    print(f"\n--- ELABORAZIONE AVANZATA SCHEMA: {source_name} ---")
+    """ Pipeline completa di caricamento e pulizia. """
+    print(f"\n🚀 START PIPELINE: {source_name}")
     try:
-        df = pd.read_csv(file_path, **kwargs)
+        # Carichiamo solo le colonne che ci servono per risparmiare RAM
+        needed_cols = list(mapping.keys())
+        df = pd.read_csv(file_path, usecols=needed_cols, **kwargs)
         
-        # Mapping
-        df_mapped = df.rename(columns=mapping)
+        df_final = df.rename(columns=mapping)
         
-        # Selezione colonne
-        mediated_columns = list(set(mapping.values()))
-        available_columns = [col for col in mediated_columns if col in df_mapped.columns]
-        df_final = df_mapped[available_columns].copy()
-        
-        # Pipeline di pulizia
+        # Esecuzione pipeline
         df_final = standardize_data(df_final)
         df_final = deep_clean(df_final)
         df_final = final_polish(df_final)
         
-        # Pulizia VIN per Ground Truth
         if 'vin' in df_final.columns:
-            df_final['vin_clean'] = df_final['vin'].apply(clean_vin_for_gt)
+            print(f"Validazione VIN per {source_name}...")
+            df_final['vin_clean'] = df_final['vin'].progress_apply(clean_vin_for_gt)
         
-        # Gestione finale segnaposto
-        df_final = handle_placeholders(df_final)
-        
-        print(f"Dataset '{source_name}' pronto. Righe: {len(df_final)}")
+        print(f"✅ {source_name} completato: {len(df_final)} righe.")
         return df_final
     except Exception as e:
-        print(f"Errore durante l'elaborazione di {source_name}: {e}")
+        print(f"❌ Errore critico su {source_name}: {e}")
         return None
 
-# Mapping aggiornati (rimosso 'city' e 'region')
+# --- CONFIGURAZIONE ---
+
 CRAIGSLIST_MAPPING = {
     'VIN': 'vin',
     'manufacturer': 'make',
@@ -165,18 +134,23 @@ US_CARS_MAPPING = {
 if __name__ == "__main__":
     os.makedirs('data/processed', exist_ok=True)
     
-    # Campione per test (1 milione di righe)
-    params = {'nrows': 1000000}
+    # Caricamento Craigslist (Full)
+    df_cl = load_and_map('data/raw/craiglist/vehicles.csv', CRAIGSLIST_MAPPING, 'Craigslist')
     
-    # Elaborazione
-    df_cl = load_and_map('data/raw/craiglist/vehicles.csv', CRAIGSLIST_MAPPING, 'Craigslist', **params)
-    df_us = load_and_map('data/raw/us_used_cars/used_cars_data.csv', US_CARS_MAPPING, 'US Used Cars', **params, dtype={'dealer_zip': str, 'bed': str})
+    # Caricamento US Cars (Limitato per RAM, con dtype per stabilità)
+    df_us = load_and_map(
+        'data/raw/us_used_cars/used_cars_data.csv', 
+        US_CARS_MAPPING, 
+        'US Used Cars', 
+        nrows=2000000, # Ridotto a 2M per sicurezza RAM, alza pure se il PC regge
+        low_memory=False
+    )
     
-    # Salvataggio
+    # Salvataggio finale
     if df_cl is not None:
         df_cl.to_csv('data/processed/craigslist_aligned.csv', index=False)
-        print("Salvato: data/processed/craigslist_aligned.csv")
+        print("📁 Salvato: craigslist_aligned.csv")
         
     if df_us is not None:
         df_us.to_csv('data/processed/us_cars_aligned.csv', index=False)
-        print("Salvato: data/processed/us_cars_aligned.csv")
+        print("📁 Salvato: us_cars_aligned.csv")

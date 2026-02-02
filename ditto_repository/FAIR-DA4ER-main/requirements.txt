@@ -1,7 +1,3 @@
-pandas
-recordlinkage
-dedupe
-numpy
 gensim
 numpy
 regex
