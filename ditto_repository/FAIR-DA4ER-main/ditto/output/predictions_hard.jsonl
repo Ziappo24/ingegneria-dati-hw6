@@ -1,0 +1,10 @@
+{"left": "COL make VAL Toyota COL model VAL Camry 2010", "right": "COL make VAL Toyota COL model VAL Camry 2011", "match": 0, "match_confidence": 0.9998975657784916}
+{"left": "COL make VAL Honda COL model VAL Civic", "right": "COL make VAL Honda COL model VAL Civic LX Sedan 4D 2.0L", "match": 0, "match_confidence": 0.9994796387432344}
+{"left": "COL make VAL Cheverolet COL model VAL Impala", "right": "COL make VAL Chevrolet COL model VAL Impala", "match": 0, "match_confidence": 0.9999638670107458}
+{"left": "COL make VAL BMW COL model VAL 328i", "right": "COL make VAL BMW COL model VAL 335i", "match": 1, "match_confidence": 0.8363503363211184}
+{"left": "COL make VAL Ford COL model VAL F-150", "right": "COL make VAL Ford COL model VAL F-150 XL", "match": 1, "match_confidence": 0.8259233309547646}
+{"left": "COL make VAL Ford COL model VAL Fusion", "right": "COL make VAL Ford COL model VAL Focus", "match": 0, "match_confidence": 0.9986524555636118}
+{"left": "COL make VAL Mercedes-Benz COL model VAL C-Class C300", "right": "COL make VAL Mercedes COL model VAL C300", "match": 1, "match_confidence": 0.9996828781336762}
+{"left": "COL make VAL Audi COL model VAL A4 2.0T", "right": "COL make VAL Audi COL model VAL A4 2.0T Quattro", "match": 1, "match_confidence": 0.39153427049627354}
+{"left": "COL make VAL Nissan COL model VAL Altima 2.5 S", "right": "COL make VAL Nissan COL model VAL Altima 3.5 SR", "match": 1, "match_confidence": 0.9992429141334691}
+{"left": "COL make VAL Jeep COL model VAL Wrangler", "right": "COL make VAL Jeep COL model VAL Wrangler Unlimited", "match": 1, "match_confidence": 0.9958801469455907}
