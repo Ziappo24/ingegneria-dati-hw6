@@ -10,13 +10,14 @@ import numpy as np
 from tqdm import tqdm
 from dedupe import variables
 
-# Configurazione logging
+# Configurazione logging per monitorare i progressi nel terminale
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('dedupe')
 
 def train_dedupe(blocking_strategy='B2'):
     print(f"\n--- DEDUPE EXTREME EVOLUTION - STRATEGIA: {blocking_strategy} ---")
     
+    # Setup Percorsi
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     output_dir = os.path.join(base_dir, 'data', 'results')
     model_dir = os.path.join(base_dir, 'data', 'models')
@@ -31,15 +32,13 @@ def train_dedupe(blocking_strategy='B2'):
     cl_path = os.path.join(base_dir, 'data', 'processed', 'craigslist_final.csv')
     us_path = os.path.join(base_dir, 'data', 'processed', 'us_cars_final.csv')
 
-    # 1. DEFINIZIONE CAMPI (Sostituzione Interaction con Brand_Model Sintetico)
+    # 1. DEFINIZIONE CAMPI (Specifici per B2)
     fields = [
         variables.String('make'),
         variables.String('model'),
-        # MODIFICA: Campo sintetico per risolvere l'errore Interaction
-        variables.String('brand_model'), 
-        # MODIFICA: Price per gestire differenze d'anno (es. 2018 vs 2019)
+        variables.String('brand_model'), # Campo sintetico per coerenza semantica
         variables.Price('year', has_missing=True),  
-        variables.ShortString('body_type', has_missing=True),
+        variables.ShortString('body_type', has_missing=True), # IL CUORE DELLA B2
         variables.ShortString('fuel_type', has_missing=True),
         variables.ShortString('transmission', has_missing=True)
     ]
@@ -59,7 +58,6 @@ def train_dedupe(blocking_strategy='B2'):
     df_cl_raw = pd.read_csv(cl_path, index_col='id_cl')
     df_us_raw = pd.read_csv(us_path, index_col='id_us')
 
-    # Creazione campo brand_model
     for df in [df_cl_raw, df_us_raw]:
         df['brand_model'] = df['make'].fillna('') + " " + df['model'].fillna('')
 
@@ -73,7 +71,7 @@ def train_dedupe(blocking_strategy='B2'):
     data_2 = {str(i): {k: clean_val(v, k=='year') for k, v in r.items() if k in [f.field for f in fields]} 
               for i, r in df_us_sample.iterrows()}
 
-    # 3. TRAINING OTTIMIZZATO (Target 1500)
+    # 3. TRAINING
     if os.path.exists(settings_file):
         print(f"Caricamento modello pre-addestrato...")
         with open(settings_file, 'rb') as f:
@@ -82,41 +80,36 @@ def train_dedupe(blocking_strategy='B2'):
         print("Avvio addestramento con target Recall 95%...")
         gt_train = pd.read_csv(gt_train_path)
         
-        # MODIFICA: Training bilanciato a 1500 per evitare rigidità
         target_size = 750 
         gt_matches = gt_train[gt_train['label'] == 1].sample(n=min(target_size, len(gt_train[gt_train['label'] == 1])), random_state=42)
         gt_distincts = gt_train[gt_train['label'] == 0].sample(n=min(target_size, len(gt_train[gt_train['label'] == 0])), random_state=42)
         gt_train_sub = pd.concat([gt_matches, gt_distincts])
 
         training_points = {'match': [], 'distinct': []}
-        for _, row in tqdm(gt_train_sub.iterrows(), total=len(gt_train_sub), desc="Training"):
+        for _, row in tqdm(gt_train_sub.iterrows(), total=len(gt_train_sub), desc="Pre-processing Training"):
             id_cl, id_us = int(row['id_cl']), int(row['id_us'])
             if id_cl in df_cl_raw.index and id_us in df_us_raw.index:
                 r_cl, r_us = df_cl_raw.loc[id_cl], df_us_raw.loc[id_us]
-                # Creiamo i record includendo il brand_model
                 rec_a = {k: clean_val(v, k=='year') for k, v in r_cl.items() if k in [f.field for f in fields]}
                 rec_b = {k: clean_val(v, k=='year') for k, v in r_us.items() if k in [f.field for f in fields]}
                 
                 if int(row['label']) == 1: training_points['match'].append([rec_a, rec_b])
                 else: training_points['distinct'].append([rec_a, rec_b])
 
+        # Scrittura file training
         with open(training_file, 'w') as tf: 
             json.dump(training_points, tf)
         
-        # MODIFICA QUI: 
-        # Invece di passare il percorso come 'training_file=training_file' dentro prepare_training,
-        # carichiamo i dati nel linker prima o passiamo il file nel modo che dedupe si aspetta.
-        
+        # Inizializzazione Obbligatoria (Blocking rules generation)
         print("Preparazione training in corso...")
-        linker.prepare_training(data_1, data_2, sample_size=5000)
+        with open(training_file, 'r') as tf:
+            linker.prepare_training(data_1, data_2, training_file=tf, sample_size=5000)
         
-        # Dopo prepare_training, leggiamo le etichette che abbiamo salvato nel JSON
-        with open(training_file, 'rb') as tf:
-            linker.read_training(tf)
-            
         print("Avvio addestramento (train)...")
         linker.train(recall=0.95)
-        with open(settings_file, 'wb') as sf: linker.write_settings(sf)
+        
+        with open(settings_file, 'wb') as sf: 
+            linker.write_settings(sf)
 
     # 4. MATCHING AGGRESSIVO
     print("Preparazione dati per il Matching finale...")
@@ -124,7 +117,6 @@ def train_dedupe(blocking_strategy='B2'):
     test_cl_ids = set(gt_test['id_cl'].unique())
     test_us_ids = set(gt_test['id_us'].unique())
 
-    # Prepariamo i dataset filtrati per il matching
     BUFFER_SIZE = 30000 
     def get_scoped_data(df, test_ids, buffer):
         needed = list(test_ids.intersection(set(df.index)))
@@ -140,10 +132,10 @@ def train_dedupe(blocking_strategy='B2'):
     data_2_final = {str(i): {k: clean_val(v, k=='year') for k, v in r.items() if k in [f.field for f in fields]} 
                     for i, r in df_us_filtered.iterrows()}
 
-    print(f"Avvio matching aggressivo (Threshold: 0.35)...")
+    print(f"Avvio matching (Threshold: 0.35)...")
     linked_records = linker.join(data_1_final, data_2_final, threshold=0.35)
     
-    # 5. RAFFINAMENTO 1:1 (PROTEZIONE PRECISIONE)
+    # 5. RAFFINAMENTO 1:1
     print("Filtraggio 1:1 e salvataggio risultati...")
     df_res = pd.DataFrame([(cl, us, conf) for (cl, us), conf in linked_records], columns=['cl_id', 'us_id', 'confidence'])
     
@@ -153,7 +145,7 @@ def train_dedupe(blocking_strategy='B2'):
         df_res = df_res.drop_duplicates(subset=['us_id'], keep='first')
     
     df_res.to_csv(output_file, index=False)
-    print(f"✅ Completato! Match validati: {len(df_res)}")
+    print(f"✅ Completato! Strategia: {blocking_strategy}. Match validati: {len(df_res)}")
 
 if __name__ == "__main__":
     train_dedupe('B2')
