@@ -185,6 +185,7 @@ def predict(input_path, output_path, config,
             process_batch(rows, pairs, writer)
 
     run_time = time.time() - start_time
+    print(f"⏱️ Tempo Inferenza Ditto: {run_time:.4f}s")
     run_tag = '%s_lm=%s_dk=%s_su=%s' % (config['name'], lm, str(dk_injector != None), str(summarizer != None))
     os.system('echo %s %f >> log.txt' % (run_tag, run_time))
 

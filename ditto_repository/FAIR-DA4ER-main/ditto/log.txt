@@ -6,3 +6,9 @@ auto_task_lm=roberta_dk=False_su=False 46.794220
 auto_task_lm=roberta_dk=False_su=False 133.091727 
 auto_task_lm=roberta_dk=False_su=False 46.912879 
 auto_task_lm=roberta_dk=False_su=False 67.137097 
+auto_task_lm=distilbert_dk=False_su=False 15.271756 
+auto_task_lm=distilbert_dk=False_su=False 72.271971 
+auto_task_lm=roberta_dk=False_su=False 46.988226 
+auto_task_lm=roberta_dk=False_su=False 133.525950 
+auto_task_lm=roberta_dk=False_su=False 47.219346 
+auto_task_lm=roberta_dk=False_su=False 65.817647 

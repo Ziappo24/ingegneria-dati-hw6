@@ -55,7 +55,8 @@ def record_linkage_rules(blocking_strategy='B1'):
     candidate_links = indexer.index(df_cl, df_us)
     print(f"Candidate links trovati: {len(candidate_links)}")
     
-    # 3. CONFRONTO
+    # 3. CONFRONTO (Inizio Inferenza)
+    start_inference = time.time()
     compare_cl = recordlinkage.Compare()
     compare_cl.string('model', 'model', method='jarowinkler', threshold=0.92, label='model')
     compare_cl.exact('fuel_type', 'fuel_type', label='fuel')
@@ -85,7 +86,15 @@ def record_linkage_rules(blocking_strategy='B1'):
     end_time = time.time()
     
     print(f"✅ Match validati (1:1): {len(matches)}")
-    print(f"⏱️ Tempo totale: {end_time - start_time:.2f}s")
+    
+    # Calcolo tempi
+    training_time = 0.0 # Rule-based non ha addestramento
+    inference_time = end_time - start_inference
+    total_time = end_time - start_time
+    
+    print(f"⏱️ Tempo Addestramento: {training_time:.4f}s")
+    print(f"⏱️ Tempo Inferenza: {inference_time:.4f}s")
+    print(f"⏱️ Tempo Totale: {total_time:.4f}s")
     
     # 5. SALVATAGGIO
     os.makedirs(results_dir, exist_ok=True)

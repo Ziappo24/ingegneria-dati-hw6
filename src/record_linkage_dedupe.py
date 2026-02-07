@@ -17,6 +17,9 @@ logger = logging.getLogger('dedupe')
 def train_dedupe(blocking_strategy='B1'):
     print(f"\n--- DEDUPE EXTREME EVOLUTION - STRATEGIA: {blocking_strategy} ---")
     
+    # MODIFICA: Imposta a True per forzare l'addestramento e calcolare i tempi
+    FORCE_TRAIN = True 
+    
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     output_dir = os.path.join(base_dir, 'data', 'results')
     model_dir = os.path.join(base_dir, 'data', 'models')
@@ -73,12 +76,16 @@ def train_dedupe(blocking_strategy='B1'):
               for i, r in df_us_sample.iterrows()}
 
     # 3. TRAINING OTTIMIZZATO (Target 1500)
-    if os.path.exists(settings_file):
+    training_start = time.time()
+    is_training_done = False
+    
+    if os.path.exists(settings_file) and not FORCE_TRAIN:
         print(f"Caricamento modello pre-addestrato...")
         with open(settings_file, 'rb') as f:
             linker = dedupe.StaticRecordLink(f, num_cores=1)
     else:
         print("Avvio addestramento con target Recall 95%...")
+        is_training_done = True
         gt_train = pd.read_csv(gt_train_path)
         
         # MODIFICA: Training bilanciato a 1500 per evitare rigidità
@@ -102,10 +109,16 @@ def train_dedupe(blocking_strategy='B1'):
         with open(training_file, 'w') as tf: json.dump(training_points, tf)
         
         # MODIFICA: sample_size aumentato a 5000 per migliorare il blocking
-        linker.prepare_training(data_1, data_2, training_file=training_file, sample_size=5000)
+        # BUG FIX: Passiamo l'oggetto file aperto invece della stringa percorso
+        with open(training_file, 'r') as tf:
+            linker.prepare_training(data_1, data_2, training_file=tf, sample_size=5000)
+            
         # MODIFICA: Forza la Recall al 95%
         linker.train(recall=0.95) 
         with open(settings_file, 'wb') as sf: linker.write_settings(sf)
+        
+    training_end = time.time()
+    training_time = training_end - training_start if is_training_done else 0.0
 
     # 4. MATCHING AGGRESSIVO
     print("Preparazione dati per il Matching finale...")
@@ -130,7 +143,10 @@ def train_dedupe(blocking_strategy='B1'):
                     for i, r in df_us_filtered.iterrows()}
 
     print(f"Avvio matching aggressivo (Threshold: 0.35)...")
+    inference_start = time.time()
     linked_records = linker.join(data_1_final, data_2_final, threshold=0.35)
+    inference_end = time.time()
+    inference_time = inference_end - inference_start
     
     # 5. RAFFINAMENTO 1:1 (PROTEZIONE PRECISIONE)
     print("Filtraggio 1:1 e salvataggio risultati...")
@@ -143,6 +159,8 @@ def train_dedupe(blocking_strategy='B1'):
     
     df_res.to_csv(output_file, index=False)
     print(f"✅ Completato! Match validati: {len(df_res)}")
+    print(f"⏱️ Tempo Addestramento: {training_time:.4f}s")
+    print(f"⏱️ Tempo Inferenza: {inference_time:.4f}s")
 
 if __name__ == "__main__":
     train_dedupe('B1')

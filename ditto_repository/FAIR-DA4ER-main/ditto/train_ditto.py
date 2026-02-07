@@ -5,6 +5,7 @@ import sys
 import torch
 import numpy as np
 import random
+import time
 
 sys.path.insert(0, "Snippext_public")
 
@@ -88,8 +89,11 @@ if __name__=="__main__":
 
 
     # train and evaluate the model
+    start_time = time.time()
     train(train_dataset,
           valid_dataset,
           test_dataset,
           run_tag, 
           hp)
+    end_time = time.time()
+    print(f"⏱️ Tempo Addestramento Ditto: {end_time - start_time:.4f}s")
